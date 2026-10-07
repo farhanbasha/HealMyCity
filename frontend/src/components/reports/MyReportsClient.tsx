@@ -241,6 +241,7 @@ export default function MyReportsClient({ initialIssues }: MyReportsClientProps)
                                             src={issue.image_url}
                                             alt={issue.ai_title || "Report photo"}
                                             fill
+                                            unoptimized
                                             className="object-cover"
                                         />
                                     </div>

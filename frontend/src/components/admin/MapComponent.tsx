@@ -93,6 +93,7 @@ export default function MapComponent({ issues }: { issues: MapIssue[] }) {
                                                 src={issue.image_url}
                                                 alt={issue.ai_title || "Issue"}
                                                 fill
+                                                unoptimized
                                                 className="object-cover"
                                                 sizes="208px"
                                             />

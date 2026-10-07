@@ -670,6 +670,7 @@ export default function LiveMapComponent({
                                                             src={issue.image_url}
                                                             alt={issue.ai_title || "Civic Issue"}
                                                             fill
+                                                            unoptimized
                                                             className="object-cover"
                                                             sizes="240px"
                                                         />

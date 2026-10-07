@@ -135,6 +135,7 @@ export default function IssueTable({
                                                         src={issue.image_url}
                                                         alt="Thumbnail"
                                                         fill
+                                                        unoptimized
                                                         className="object-cover"
                                                         sizes="40px"
                                                     />

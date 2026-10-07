@@ -72,6 +72,7 @@ export default function IssueCard({
     onVoteToggle,
 }: IssueCardProps) {
     const [voting, setVoting] = useState(false);
+    const [imgError, setImgError] = useState(false);
 
     async function handleUpvote() {
         if (voting) return;
@@ -109,7 +110,7 @@ export default function IssueCard({
             className="apple-card flex flex-col overflow-hidden bg-white group scroll-mt-24"
         >
             {/* Visual Header / Photo */}
-            {issue.image_url ? (
+            {issue.image_url && !imgError ? (
                 <Link
                     href={`/issues/${issue.id}`}
                     prefetch={true}
@@ -119,6 +120,8 @@ export default function IssueCard({
                         src={issue.image_url}
                         alt={issue.ai_title || "Civic issue photo"}
                         fill
+                        unoptimized
+                        onError={() => setImgError(true)}
                         className="object-cover group-hover:scale-[1.02] transition-transform duration-500 ease-out"
                         sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                     />

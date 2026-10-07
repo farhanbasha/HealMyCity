@@ -79,6 +79,7 @@ export default async function IssueDetailPage({
                             alt={issue.ai_title || "Civic issue photo"}
                             fill
                             priority
+                            unoptimized
                             className="object-cover"
                             sizes="(max-width: 1024px) 100vw, 896px"
                         />

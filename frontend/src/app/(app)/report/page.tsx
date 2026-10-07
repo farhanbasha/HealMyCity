@@ -521,6 +521,7 @@ export default function ReportPage() {
                             src={previewUrl}
                             alt="Analyzing issue"
                             fill
+                            unoptimized
                             className="object-cover"
                         />
                     </div>
@@ -556,6 +557,7 @@ export default function ReportPage() {
                             src={previewUrl}
                             alt="Issue confirmation"
                             fill
+                            unoptimized
                             className="object-cover"
                         />
 

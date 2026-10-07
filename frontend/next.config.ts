@@ -1,20 +1,39 @@
 import type { NextConfig } from "next";
 
+let supabaseHostname = "iffytiwsgvnhuynuvdhq.supabase.co";
+if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  try {
+    supabaseHostname = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname;
+  } catch {
+    supabaseHostname = process.env.NEXT_PUBLIC_SUPABASE_URL
+      .replace(/^https?:\/\//, "")
+      .replace(/\/.*$/, "");
+  }
+}
+
 const nextConfig: NextConfig = {
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: "https",
-        hostname: process.env.NEXT_PUBLIC_SUPABASE_URL?.replace("https://", "") || "",
-        pathname: "/storage/v1/object/public/**",
+        hostname: "*.supabase.co",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: supabaseHostname,
+        pathname: "/**",
       },
       {
         protocol: "https",
         hostname: "picsum.photos",
+        pathname: "/**",
       },
       {
         protocol: "https",
         hostname: "images.unsplash.com",
+        pathname: "/**",
       },
     ],
   },
