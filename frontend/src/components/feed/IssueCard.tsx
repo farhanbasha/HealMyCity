@@ -112,6 +112,7 @@ export default function IssueCard({
             {issue.image_url ? (
                 <Link
                     href={`/issues/${issue.id}`}
+                    prefetch={true}
                     className="relative w-full aspect-[16/10] bg-[#F5F5F7] overflow-hidden border-b border-[#F0F0F2] block"
                 >
                     <Image
@@ -149,7 +150,7 @@ export default function IssueCard({
                         </div>
                     )}
                     <h3 className="font-semibold text-[15px] text-[#1D1D1F] leading-snug line-clamp-2 hover:text-[#007AFF] transition-colors">
-                        <Link href={`/issues/${issue.id}`}>
+                        <Link href={`/issues/${issue.id}`} prefetch={true}>
                             {issue.ai_title || "Untitled Civic Issue"}
                         </Link>
                     </h3>
@@ -180,6 +181,7 @@ export default function IssueCard({
                         {issue.latitude && issue.longitude && (
                             <Link
                                 href={`/map?focus=${issue.id}`}
+                                prefetch={true}
                                 className="flex items-center gap-1 hover:text-[#1D1D1F] transition-colors"
                                 title="View on Live Map"
                             >

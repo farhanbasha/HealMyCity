@@ -13,7 +13,8 @@ export default function BottomNav() {
                 {/* Feed */}
                 <Link
                     href="/"
-                    className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-colors ${
+                    prefetch={true}
+                    className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-all active:scale-90 ${
                         pathname === "/"
                             ? "text-[#1D1D1F] font-semibold"
                             : "text-[#86868B] hover:text-[#1D1D1F]"
@@ -26,7 +27,8 @@ export default function BottomNav() {
                 {/* Live Map */}
                 <Link
                     href="/map"
-                    className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-colors ${
+                    prefetch={true}
+                    className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-all active:scale-90 ${
                         pathname === "/map"
                             ? "text-[#1D1D1F] font-semibold"
                             : "text-[#86868B] hover:text-[#1D1D1F]"
@@ -39,7 +41,8 @@ export default function BottomNav() {
                 {/* Report Center */}
                 <Link
                     href="/report"
-                    className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-colors ${
+                    prefetch={true}
+                    className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-all active:scale-90 ${
                         pathname === "/report"
                             ? "text-[#1D1D1F] font-semibold"
                             : "text-[#86868B] hover:text-[#1D1D1F]"
@@ -52,7 +55,8 @@ export default function BottomNav() {
                 {/* My Reports */}
                 <Link
                     href="/my-reports"
-                    className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-colors ${
+                    prefetch={true}
+                    className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-all active:scale-90 ${
                         pathname === "/my-reports"
                             ? "text-[#1D1D1F] font-semibold"
                             : "text-[#86868B] hover:text-[#1D1D1F]"
@@ -65,7 +69,8 @@ export default function BottomNav() {
                 {/* Profile */}
                 <Link
                     href="/profile"
-                    className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-colors ${
+                    prefetch={true}
+                    className={`flex flex-col items-center gap-0.5 px-2 py-1 transition-all active:scale-90 ${
                         pathname === "/profile"
                             ? "text-[#1D1D1F] font-semibold"
                             : "text-[#86868B] hover:text-[#1D1D1F]"

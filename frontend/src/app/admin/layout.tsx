@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { getCachedAuthUser, getCachedUserProfile } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { LayoutDashboard, Map as MapIcon, LogOut, ArrowLeft, Building2 } from "lucide-react";
@@ -9,21 +9,13 @@ export default async function AdminLayout({
 }: {
     children: React.ReactNode;
 }) {
-    const supabase = await createClient();
-
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCachedAuthUser();
 
     if (!user) {
         redirect("/login");
     }
 
-    const { data: profile } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .single();
+    const profile = await getCachedUserProfile(user.id);
 
     if (profile?.role !== "admin") {
         redirect("/");
@@ -49,6 +41,7 @@ export default async function AdminLayout({
                 <nav className="flex-1 px-3 py-4 space-y-1">
                     <Link
                         href="/admin"
+                        prefetch={true}
                         className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[#1D1D1F] hover:bg-[#F5F5F7] transition-colors"
                     >
                         <LayoutDashboard size={15} className="text-[#6E6E73]" />
@@ -56,6 +49,7 @@ export default async function AdminLayout({
                     </Link>
                     <Link
                         href="/admin/map"
+                        prefetch={true}
                         className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-[#6E6E73] hover:text-[#1D1D1F] hover:bg-[#F5F5F7] transition-colors"
                     >
                         <MapIcon size={15} className="text-[#6E6E73]" />
@@ -67,6 +61,7 @@ export default async function AdminLayout({
                 <div className="p-3 border-t border-[#F0F0F2] space-y-1">
                     <Link
                         href="/"
+                        prefetch={true}
                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#F5F5F7] transition-colors"
                     >
                         <ArrowLeft size={13} />
@@ -94,12 +89,14 @@ export default async function AdminLayout({
                     <div className="flex items-center gap-2">
                         <Link
                             href="/admin"
+                            prefetch={true}
                             className="text-xs font-medium px-2.5 py-1 rounded bg-[#F5F5F7] text-[#1D1D1F]"
                         >
                             Triage
                         </Link>
                         <Link
                             href="/admin/map"
+                            prefetch={true}
                             className="text-xs font-medium px-2.5 py-1 rounded text-[#6E6E73]"
                         >
                             Map

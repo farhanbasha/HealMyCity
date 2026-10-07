@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedAuthUser } from "@/lib/supabase/server";
 import { notFound, redirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -20,17 +20,15 @@ export default async function IssueDetailPage({
     params: Promise<{ id: string }>;
 }) {
     const { id } = await params;
-    const supabase = await createClient();
-
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCachedAuthUser();
 
     if (!user) {
         redirect("/login");
     }
 
-    // Attempt to fetch from database
+    const supabase = await createClient();
+
+    // Fetch from database
     const { data: dbIssue } = await supabase
         .from("issues")
         .select("*")
@@ -52,6 +50,7 @@ export default async function IssueDetailPage({
             <div className="flex items-center justify-between">
                 <Link
                     href="/"
+                    prefetch={true}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white hover:bg-[#F5F5F7] border border-[#E5E5EA] text-xs font-medium text-[#1D1D1F] transition-colors"
                 >
                     <ArrowLeft size={13} />
@@ -61,6 +60,7 @@ export default async function IssueDetailPage({
                 {issue.latitude && issue.longitude && (
                     <Link
                         href={`/map?focus=${issue.id}`}
+                        prefetch={true}
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#1D1D1F] hover:bg-[#333336] text-white text-xs font-medium transition-colors"
                     >
                         <MapIcon size={13} />

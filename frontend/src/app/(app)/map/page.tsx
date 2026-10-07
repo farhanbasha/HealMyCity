@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedAuthUser, getCachedUserProfile } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import LiveMapWrapper from "@/components/map/LiveMapWrapper";
 import Link from "next/link";
@@ -12,35 +12,28 @@ export default async function LiveMapPage({
 }) {
     const sp = searchParams ? await searchParams : {};
     const focusIssueId = sp.focus;
-    const supabase = await createClient();
 
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
-
+    const user = await getCachedAuthUser();
     if (!user) {
         redirect("/login");
     }
 
-    // Fetch user profile to verify role
-    const { data: profile } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", user.id)
-        .single();
+    const supabase = await createClient();
+
+    // Fetch user profile and active issues concurrently
+    const [profile, rawIssuesRes] = await Promise.all([
+        getCachedUserProfile(user.id),
+        supabase
+            .from("issues")
+            .select("*")
+            .in("status", ["open", "in_progress"])
+            .not("latitude", "is", null)
+            .not("longitude", "is", null)
+            .order("created_at", { ascending: false }),
+    ]);
 
     const isAdmin = profile?.role === "admin";
-
-    // Fetch active issues with geographic coordinates
-    const { data: rawIssues } = await supabase
-        .from("issues")
-        .select("*")
-        .in("status", ["open", "in_progress"])
-        .not("latitude", "is", null)
-        .not("longitude", "is", null)
-        .order("created_at", { ascending: false });
-
-    const issues: MapIssue[] = (rawIssues as MapIssue[]) || [];
+    const issues: MapIssue[] = (rawIssuesRes.data as MapIssue[]) || [];
 
     const criticalCount = issues.filter((i) => (i.ai_severity_score || 0) >= 8).length;
     const totalVotes = issues.reduce((acc, curr) => acc + (curr.upvote_count || 0), 0);
@@ -68,6 +61,7 @@ export default async function LiveMapPage({
                     {isAdmin && (
                         <Link
                             href="/admin"
+                            prefetch={true}
                             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#1D1D1F] text-white text-xs font-medium hover:bg-[#333336] transition-colors"
                         >
                             <Building2 size={13} />
@@ -77,6 +71,7 @@ export default async function LiveMapPage({
 
                     <Link
                         href="/report"
+                        prefetch={true}
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#F5F5F7] hover:bg-[#E8E8ED] text-[#1D1D1F] text-xs font-medium border border-[#E5E5EA] transition-colors"
                     >
                         <Plus size={14} />

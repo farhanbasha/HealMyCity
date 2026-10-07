@@ -34,6 +34,7 @@ export default async function AdminMapPage() {
                 <div className="flex items-center gap-2">
                     <Link
                         href="/admin"
+                        prefetch={true}
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#1D1D1F] text-white text-xs font-medium hover:bg-[#333336] transition-colors w-fit"
                     >
                         <ArrowLeft size={13} />

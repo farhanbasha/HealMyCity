@@ -1,31 +1,38 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedAuthUser } from "@/lib/supabase/server";
 import HomeFeed from "@/components/feed/HomeFeed";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus, Map } from "lucide-react";
 
-export default async function HomePage() {
+export default async function HomePage({
+    searchParams,
+}: {
+    searchParams?: Promise<{ code?: string }>;
+}) {
+    const sp = searchParams ? await searchParams : {};
+    if (sp.code) {
+        redirect(`/auth/callback?code=${encodeURIComponent(sp.code)}`);
+    }
+
+    const user = await getCachedAuthUser();
     const supabase = await createClient();
 
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
+    // Fetch issues and user votes in parallel
+    const [issuesRes, votesRes] = await Promise.all([
+        supabase
+            .from("issues")
+            .select("*")
+            .order("created_at", { ascending: false }),
+        user
+            ? supabase
+                  .from("votes")
+                  .select("issue_id")
+                  .eq("user_id", user.id)
+            : Promise.resolve({ data: [] }),
+    ]);
 
-    const { data: rawIssues } = await supabase
-        .from("issues")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-    const issues = rawIssues || [];
-
-    let userVotes: string[] = [];
-    if (user) {
-        const { data: votes } = await supabase
-            .from("votes")
-            .select("issue_id")
-            .eq("user_id", user.id);
-
-        userVotes = (votes || []).map((v: { issue_id: string }) => v.issue_id);
-    }
+    const issues = issuesRes.data || [];
+    const userVotes = (votesRes.data || []).map((v: { issue_id: string }) => v.issue_id);
 
     return (
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 md:py-12 space-y-10">
@@ -43,6 +50,7 @@ export default async function HomePage() {
                 <div className="flex flex-wrap items-center gap-3 pt-2">
                     <Link
                         href="/report"
+                        prefetch={true}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#1D1D1F] text-white text-sm font-medium hover:bg-[#333336] active:scale-[0.98] transition-all"
                     >
                         <Plus size={16} strokeWidth={2.4} />
@@ -51,6 +59,7 @@ export default async function HomePage() {
 
                     <Link
                         href="/map"
+                        prefetch={true}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#F5F5F7] hover:bg-[#E8E8ED] text-[#1D1D1F] text-sm font-medium border border-[#E5E5EA] transition-all"
                     >
                         <Map size={15} className="text-[#6E6E73]" />

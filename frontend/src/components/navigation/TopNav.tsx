@@ -25,7 +25,7 @@ export default function TopNav({ userEmail, userRole }: TopNavProps) {
         <header className="sticky top-0 z-50 w-full bg-white/80 backdrop-blur-xl border-b border-black/[0.06] hidden md:block">
             <nav className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
                 {/* Brand */}
-                <Link href="/" className="flex items-center gap-2 group">
+                <Link href="/" prefetch={true} className="flex items-center gap-2 group active:scale-95 transition-transform">
                     <div className="w-7 h-7 rounded-lg bg-[#1D1D1F] text-white flex items-center justify-center transition-transform group-hover:scale-95">
                         <MapPin size={15} strokeWidth={2.2} />
                     </div>
@@ -42,10 +42,11 @@ export default function TopNav({ userEmail, userRole }: TopNavProps) {
                             <Link
                                 key={href}
                                 href={href}
-                                className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
+                                prefetch={true}
+                                className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-all active:scale-95 ${
                                     isActive
                                         ? "text-[#1D1D1F] bg-[#F5F5F7]"
-                                        : "text-[#6E6E73] hover:text-[#1D1D1F]"
+                                        : "text-[#6E6E73] hover:text-[#1D1D1F] hover:bg-[#F5F5F7]/60"
                                 }`}
                             >
                                 {label}
@@ -59,6 +60,7 @@ export default function TopNav({ userEmail, userRole }: TopNavProps) {
                     {pathname !== "/report" && (
                         <Link
                             href="/report"
+                            prefetch={true}
                             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#1D1D1F] text-white text-[13px] font-medium hover:bg-[#333336] active:scale-[0.98] transition-all"
                         >
                             <Plus size={14} strokeWidth={2.5} />
@@ -69,7 +71,8 @@ export default function TopNav({ userEmail, userRole }: TopNavProps) {
                     {userRole === "admin" && (
                         <Link
                             href="/admin"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F5F5F7] hover:bg-[#E8E8ED] text-[#1D1D1F] text-xs font-semibold border border-[#E5E5EA] transition-all"
+                            prefetch={true}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F5F5F7] hover:bg-[#E8E8ED] text-[#1D1D1F] text-xs font-semibold border border-[#E5E5EA] active:scale-[0.98] transition-all"
                         >
                             <Building2 size={13} className="text-[#1D1D1F]" />
                             <span>City Admin</span>

@@ -1,40 +1,35 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCachedAuthUser, getCachedUserProfile } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
 import { Mail, Calendar, Shield, Plus, LogOut } from "lucide-react";
 import Link from "next/link";
 
 export default async function ProfilePage() {
-    const supabase = await createClient();
-
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getCachedAuthUser();
 
     if (!user) {
         redirect("/login");
     }
 
-    // Fetch user profile
-    const { data: profile } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", user.id)
-        .single();
+    const supabase = await createClient();
 
-    // Count user's issues
-    const { count: issueCount } = await supabase
-        .from("issues")
-        .select("*", { count: "exact", head: true })
-        .eq("user_id", user.id);
+    // Fetch user profile, issue count, and submitted issues concurrently in one batch
+    const [profile, issueCountRes, userIssuesRes] = await Promise.all([
+        getCachedUserProfile(user.id),
+        supabase
+            .from("issues")
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", user.id),
+        supabase
+            .from("issues")
+            .select("upvote_count")
+            .eq("user_id", user.id),
+    ]);
 
-    // Fetch user's submitted issues to compute total upvotes received
-    const { data: userIssues } = await supabase
-        .from("issues")
-        .select("upvote_count")
-        .eq("user_id", user.id);
+    const issueCount = issueCountRes.count || 0;
+    const userIssues = userIssuesRes.data || [];
 
-    const totalUpvotes = (userIssues || []).reduce(
+    const totalUpvotes = userIssues.reduce(
         (sum, item) => sum + (item.upvote_count || 0),
         0
     );
@@ -137,6 +132,7 @@ export default async function ProfilePage() {
                 <div className="pt-4 border-t border-[#F0F0F2] flex flex-col sm:flex-row items-center gap-2">
                     <Link
                         href="/my-reports"
+                        prefetch={true}
                         className="w-full sm:flex-1 py-2 px-4 rounded-full bg-[#1D1D1F] hover:bg-[#333336] text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
                     >
                         <span>View my reports</span>
@@ -144,6 +140,7 @@ export default async function ProfilePage() {
 
                     <Link
                         href="/report"
+                        prefetch={true}
                         className="w-full sm:w-auto py-2 px-4 rounded-full bg-white hover:bg-[#F5F5F7] border border-[#E5E5EA] text-[#1D1D1F] text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
                     >
                         <Plus size={14} />

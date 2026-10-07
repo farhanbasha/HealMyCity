@@ -42,6 +42,7 @@ export default async function AdminDashboardPage() {
 
                 <Link
                     href="/admin/map"
+                    prefetch={true}
                     className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#F5F5F7] hover:bg-[#E8E8ED] border border-[#E5E5EA] text-xs font-medium text-[#1D1D1F] transition-colors w-fit"
                 >
                     <MapPin size={13} className="text-[#6E6E73]" />
