@@ -301,14 +301,16 @@ export default function ReportPage() {
             const formData = new FormData();
             formData.append("file", file);
 
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-            const res = await fetch(`${apiUrl}/api/analyze-issue/`, {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "";
+            const endpoint = apiUrl ? `${apiUrl}/api/analyze-issue` : "/api/analyze-issue";
+            const res = await fetch(endpoint, {
                 method: "POST",
                 body: formData,
             });
 
             if (!res.ok) {
-                throw new Error("Local analysis service unavailable");
+                const errJson = await res.json().catch(() => null);
+                throw new Error(errJson?.detail || `AI service returned HTTP ${res.status}`);
             }
 
             const data: AnalysisResult = await res.json();
@@ -325,7 +327,11 @@ export default function ReportPage() {
             setEditCategory(data.category);
             setEditSeverity(data.severity_score);
             setStep("confirm");
-        } catch {
+            toast.success("AI analysis complete!");
+        } catch (err: unknown) {
+            console.error("AI analysis encountered an issue:", err);
+            toast.info("AI analysis unavailable. You can fill in the issue details below.");
+
             // Graceful diagnostic fallback: allow user to inspect and edit details directly
             const fallbackResult: AnalysisResult = {
                 is_civic_issue: true,

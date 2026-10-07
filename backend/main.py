@@ -210,21 +210,31 @@ async def analyze_issue(file: UploadFile = File(...)):
         mime_type=file.content_type,
     )
 
-    try:
-        # Call Gemini with the system instruction + the image
-        response = await client.aio.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[SYSTEM_INSTRUCTION, image_part],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.2,  # Low temperature for consistent output
-            ),
-        )
-    except Exception as e:
+    response = None
+    last_error = None
+    candidate_models = list(dict.fromkeys([GEMINI_MODEL, "gemini-3.6-flash", "gemini-flash-latest", "gemini-3.8-flash"]))
+
+    for model_name in candidate_models:
+        try:
+            response = await client.aio.models.generate_content(
+                model=model_name,
+                contents=[SYSTEM_INSTRUCTION, image_part],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2,
+                ),
+            )
+            if response and response.text:
+                break
+        except Exception as e:
+            last_error = e
+            print(f"[Gemini] Model {model_name} failed: {e}. Trying next model...")
+
+    if not response or not response.text:
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
-            detail=f"Gemini API call failed: {str(e)}",
+            detail=f"Gemini API call failed across all candidate models: {str(last_error)}",
         )
 
     # ── Parse the AI response ───────────────────────────────────────
