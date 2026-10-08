@@ -9,11 +9,26 @@ import {
     Circle,
     Popup,
     useMap,
+    Marker,
 } from "react-leaflet";
 import L from "leaflet";
 import Image from "next/image";
 import Link from "next/link";
-import { Flame, Layers, ExternalLink, ArrowRight, Sparkles } from "lucide-react";
+import {
+    Flame,
+    Layers,
+    ExternalLink,
+    ArrowRight,
+    Sparkles,
+    MapPin,
+    Navigation,
+    X,
+    Filter,
+} from "lucide-react";
+import { rankIssues, calculatePriorityMetrics } from "@/lib/priority";
+import { getIpLocation } from "@/lib/location";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 
 // Fix for missing default markers in Leaflet + Next.js
 const iconRetinaUrl = "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png";
@@ -155,17 +170,124 @@ function MapController({
     return null;
 }
 
+const CITY_PRESETS: { name: string; lat: number; lng: number }[] = [
+    { name: "Bengaluru", lat: 12.9716, lng: 77.5946 },
+    { name: "Mumbai", lat: 19.0760, lng: 72.8777 },
+    { name: "Delhi NCR", lat: 28.6139, lng: 77.2090 },
+    { name: "Hyderabad", lat: 17.3850, lng: 78.4867 },
+];
+
 export default function LiveMapComponent({
-    issues,
+    issues: initialIssues,
     focusIssueId,
+    isAdmin = false,
 }: {
     issues: MapIssue[];
     focusIssueId?: string;
+    isAdmin?: boolean;
 }) {
+    const [issues, setIssues] = useState<MapIssue[]>(initialIssues);
+
+    useEffect(() => {
+        setIssues(initialIssues);
+    }, [initialIssues]);
+
     const [selectedCategory, setSelectedCategory] = useState("all");
     const [viewMode, setViewMode] = useState<"all" | "hotspots">("all");
     const [showHeatmaps, setShowHeatmaps] = useState(true);
     const [activeTarget, setActiveTarget] = useState<{ center: [number, number]; zoom: number } | null>(null);
+
+    // Admin location & radius state
+    const [adminCoords, setAdminCoords] = useState<{ lat: number; lng: number; name: string } | null>(null);
+    const [radiusKm, setRadiusKm] = useState<number>(0); // 0 = disabled / all distances
+    const [isLocating, setIsLocating] = useState<boolean>(false);
+    const [selectedPreset, setSelectedPreset] = useState<string>("none");
+
+    async function handleDetectLocation() {
+        setIsLocating(true);
+        if (typeof navigator !== "undefined" && navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+                    setAdminCoords({
+                        lat,
+                        lng,
+                        name: "My GPS Location",
+                    });
+                    setSelectedPreset("gps");
+                    if (radiusKm === 0) setRadiusKm(30);
+                    setActiveTarget({ center: [lat, lng], zoom: 12 });
+                    setIsLocating(false);
+                    toast.success("GPS Location acquired! Ranking issues within radius.");
+                },
+                async () => {
+                    try {
+                        const ipLoc = await getIpLocation();
+                        if (ipLoc) {
+                            setAdminCoords({
+                                lat: ipLoc.lat,
+                                lng: ipLoc.lng,
+                                name: ipLoc.cityName ? `Near ${ipLoc.cityName}` : "Network Location",
+                            });
+                            setSelectedPreset("ip");
+                            if (radiusKm === 0) setRadiusKm(30);
+                            setActiveTarget({ center: [ipLoc.lat, ipLoc.lng], zoom: 12 });
+                            toast.success("Location acquired via network!");
+                        } else {
+                            toast.error("Could not acquire location. Please pick a city preset.");
+                        }
+                    } catch {
+                        toast.error("Location detection failed");
+                    } finally {
+                        setIsLocating(false);
+                    }
+                }
+            );
+        } else {
+            setIsLocating(false);
+            toast.error("Geolocation not supported by this browser");
+        }
+    }
+
+    function handlePresetSelect(presetName: string) {
+        setSelectedPreset(presetName);
+        if (presetName === "none") {
+            setAdminCoords(null);
+            setRadiusKm(0);
+            return;
+        }
+        const found = CITY_PRESETS.find((c) => c.name === presetName);
+        if (found) {
+            setAdminCoords({
+                lat: found.lat,
+                lng: found.lng,
+                name: found.name,
+            });
+            if (radiusKm === 0) setRadiusKm(30);
+            setActiveTarget({ center: [found.lat, found.lng], zoom: 12 });
+            toast.info(`Centered on ${found.name}`);
+        }
+    }
+
+    async function handlePopupStatusChange(issueId: string, newStatus: string) {
+        const prevIssues = [...issues];
+        setIssues((prev) =>
+            prev.map((i) => (i.id === issueId ? { ...i, status: newStatus } : i))
+        );
+        const supabase = createClient();
+        const { error } = await supabase
+            .from("issues")
+            .update({ status: newStatus })
+            .eq("id", issueId);
+
+        if (error) {
+            toast.error("Failed to update status");
+            setIssues(prevIssues);
+        } else {
+            toast.success(`Status updated to ${newStatus.replace("_", " ").toUpperCase()}`);
+        }
+    }
 
     // Dynamic CARTO / OpenStreetMap tile resolution with valid ?key= parameter
     const cartoKey = process.env.NEXT_PUBLIC_CARTO_API_KEY?.trim();
@@ -300,14 +422,75 @@ export default function LiveMapComponent({
         return detectedHotspots.sort((a, b) => b.densityScore - a.densityScore);
     }, [issues]);
 
-    // Filter issues by category
-    const filteredIssues = useMemo(() => {
+    // 1. Base citywide ranking across all active issues
+    const globalRankedIssues = useMemo(() => {
+        return rankIssues(issues);
+    }, [issues]);
+
+    const globalRankMap = useMemo(() => {
+        const map = new Map<string, number>();
+        globalRankedIssues.forEach((issue) => {
+            map.set(issue.id, issue.priorityRank);
+        });
+        return map;
+    }, [globalRankedIssues]);
+
+    // 2. Filter issues by category
+    const categoryFilteredIssues = useMemo(() => {
         return issues.filter((issue) => {
             if (selectedCategory === "all") return true;
             const cat = (issue.ai_category || "").toLowerCase();
             return cat.includes(selectedCategory.toLowerCase());
         });
     }, [issues, selectedCategory]);
+
+    // 3. Filter issues by radius (if admin & radius active)
+    const radiusFilteredIssues = useMemo(() => {
+        if (!isAdmin || radiusKm <= 0 || !adminCoords) {
+            return categoryFilteredIssues;
+        }
+        return categoryFilteredIssues.filter((issue) => {
+            if (typeof issue.latitude !== "number" || typeof issue.longitude !== "number") {
+                return false;
+            }
+            const dist = getDistanceKm(
+                adminCoords.lat,
+                adminCoords.lng,
+                issue.latitude,
+                issue.longitude
+            );
+            return dist <= radiusKm;
+        });
+    }, [categoryFilteredIssues, isAdmin, radiusKm, adminCoords]);
+
+    // 4. Dynamic local re-ranking for issues within active radius
+    const displayedIssues = useMemo(() => {
+        if (!isAdmin || radiusKm <= 0 || !adminCoords) {
+            return radiusFilteredIssues.map((issue) => ({
+                ...issue,
+                displayRank: globalRankMap.get(issue.id) ?? 1,
+                globalRank: globalRankMap.get(issue.id) ?? 1,
+                zoneRank: null as number | null,
+            }));
+        }
+
+        // Re-rank the issues inside this local radius
+        const rankedSubset = rankIssues(radiusFilteredIssues);
+        const localRankMap = new Map<string, number>();
+        rankedSubset.forEach((item) => {
+            localRankMap.set(item.id, item.priorityRank);
+        });
+
+        return radiusFilteredIssues.map((issue) => ({
+            ...issue,
+            displayRank: localRankMap.get(issue.id) ?? globalRankMap.get(issue.id) ?? 1,
+            globalRank: globalRankMap.get(issue.id) ?? 1,
+            zoneRank: localRankMap.get(issue.id) ?? null,
+        }));
+    }, [radiusFilteredIssues, isAdmin, radiusKm, adminCoords, globalRankMap]);
+
+    // Main issue list to render on the map
+    const filteredIssues = displayedIssues;
 
     // Map default center
     const defaultCenter: [number, number] = useMemo(() => {
@@ -418,6 +601,80 @@ export default function LiveMapComponent({
                                 </span>
                             </button>
                         ))}
+                    </div>
+                )}
+
+                {/* Admin Geospatial Dispatch & Radius Controls */}
+                {isAdmin && (
+                    <div className="pt-2.5 border-t border-[#F0F0F2] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                            {/* GPS Detect button */}
+                            <button
+                                type="button"
+                                onClick={handleDetectLocation}
+                                disabled={isLocating}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#1D1D1F] hover:bg-[#333336] text-white transition-all cursor-pointer shadow-2xs"
+                            >
+                                <Navigation size={13} className={isLocating ? "animate-spin" : ""} />
+                                <span>{isLocating ? "Detecting..." : "My GPS Location"}</span>
+                            </button>
+
+                            {/* Preset Location dropdown */}
+                            <div className="flex items-center gap-1.5 bg-[#F5F5F7] px-2.5 py-1.5 rounded-lg border border-transparent">
+                                <MapPin size={12} className="text-[#86868B]" />
+                                <select
+                                    value={selectedPreset}
+                                    onChange={(e) => handlePresetSelect(e.target.value)}
+                                    aria-label="Select target location preset"
+                                    className="bg-transparent text-xs font-medium text-[#1D1D1F] cursor-pointer focus:outline-none"
+                                >
+                                    <option value="none">Choose City Preset...</option>
+                                    {CITY_PRESETS.map((city) => (
+                                        <option key={city.name} value={city.name}>
+                                            {city.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Radius dropdown */}
+                            <div className="flex items-center gap-1.5 bg-[#F5F5F7] px-2.5 py-1.5 rounded-lg border border-transparent">
+                                <Filter size={12} className="text-[#86868B]" />
+                                <select
+                                    value={radiusKm}
+                                    onChange={(e) => setRadiusKm(Number(e.target.value))}
+                                    aria-label="Filter radius in kilometers"
+                                    className="bg-transparent text-xs font-medium text-[#1D1D1F] cursor-pointer focus:outline-none"
+                                >
+                                    <option value={0}>All Distances (Radius Off)</option>
+                                    <option value={20}>Within 20 km radius</option>
+                                    <option value={30}>Within 30 km radius</option>
+                                    <option value={40}>Within 40 km radius</option>
+                                    <option value={50}>Within 50 km radius</option>
+                                    <option value={100}>Within 100 km radius</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Active radius status badge with instant reset */}
+                        {radiusKm > 0 && adminCoords && (
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EBF5FF] border border-[#B9E6FE] text-xs font-medium text-[#007AFF]">
+                                <span>
+                                    Zone: <strong>{radiusKm}km</strong> around {adminCoords.name} ({displayedIssues.length} issues)
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setRadiusKm(0);
+                                        toast.info("Radius filter disabled - Showing citywide queue");
+                                    }}
+                                    className="p-0.5 hover:bg-[#D0E8FF] rounded-full text-[#007AFF] transition-colors cursor-pointer"
+                                    title="Disable radius filter"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -644,115 +901,331 @@ export default function LiveMapComponent({
                                 );
                             })}
 
-                        {/* 3. POLISHED APPLE & GOOGLE MAPS ISSUE PINS */}
-                        {viewMode === "all" &&
-                            filteredIssues.map((issue) => {
-                                const catColor = getCategoryColor(issue.ai_category);
-                                const radius = Math.min(13, 7 + Math.sqrt(issue.upvote_count) * 0.9);
+                        {/* ADMIN LOCATION PIN & RADIUS BOUNDARY OVERLAY */}
+                        {isAdmin && adminCoords && (
+                            <>
+                                <Marker
+                                    position={[adminCoords.lat, adminCoords.lng]}
+                                    icon={L.divIcon({
+                                        className: "admin-center-pin",
+                                        html: `
+                                            <div style="
+                                                width: 20px;
+                                                height: 20px;
+                                                border-radius: 9999px;
+                                                background-color: #007AFF;
+                                                border: 3px solid #ffffff;
+                                                box-shadow: 0 0 0 4px rgba(0,122,255,0.35), 0 2px 8px rgba(0,0,0,0.3);
+                                            "></div>
+                                        `,
+                                        iconSize: [20, 20],
+                                        iconAnchor: [10, 10],
+                                    })}
+                                >
+                                    <Popup>
+                                        <div className="text-xs p-1 font-sans">
+                                            <p className="font-bold text-[#1D1D1F]">{adminCoords.name}</p>
+                                            <p className="text-[11px] text-[#6E6E73] mt-0.5">
+                                                {radiusKm > 0
+                                                    ? `Active dispatch zone: ${radiusKm} km radius`
+                                                    : "Radius filter disabled (All distances)"}
+                                            </p>
+                                        </div>
+                                    </Popup>
+                                </Marker>
 
-                                return (
-                                    <CircleMarker
-                                        key={issue.id}
-                                        center={[issue.latitude, issue.longitude]}
+                                {radiusKm > 0 && (
+                                    <Circle
+                                        center={[adminCoords.lat, adminCoords.lng]}
+                                        radius={radiusKm * 1000}
                                         pathOptions={{
-                                            color: catColor.stroke,
-                                            fillColor: catColor.fill,
-                                            fillOpacity: 0.95,
-                                            weight: 2,
+                                            color: "#007AFF",
+                                            fillColor: "#007AFF",
+                                            fillOpacity: 0.05,
+                                            weight: 1.5,
+                                            dashArray: "6, 6",
                                         }}
-                                        radius={radius}
-                                    >
-                                        <Popup>
-                                            <div className="w-60 p-1 space-y-2.5 font-sans">
-                                                {issue.image_url ? (
-                                                    <div className="relative w-full h-28 bg-[#F5F5F7] rounded-lg overflow-hidden border border-[#E5E5EA]">
-                                                        <Image
-                                                            src={issue.image_url}
-                                                            alt={issue.ai_title || "Civic Issue"}
-                                                            fill
-                                                            unoptimized
-                                                            className="object-cover"
-                                                            sizes="240px"
-                                                        />
-                                                    </div>
-                                                ) : null}
+                                    />
+                                )}
+                            </>
+                        )}
 
-                                                {/* Category & Read-Only Status */}
-                                                <div className="flex items-center justify-between gap-1 text-[11px]">
-                                                    <span
-                                                        className="font-bold text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md"
-                                                        style={{
-                                                            backgroundColor: catColor.badgeBg,
-                                                            color: catColor.badgeText,
-                                                        }}
-                                                    >
-                                                        {catColor.label}
-                                                    </span>
+                        {/* 3. ISSUE PINS */}
+                        {viewMode === "all" &&
+                            (isAdmin
+                                ? displayedIssues.map((issue) => {
+                                      const metrics = calculatePriorityMetrics(
+                                          issue.ai_severity_score,
+                                          issue.upvote_count
+                                      );
+                                      const displayRank = issue.displayRank;
+                                      const isZoneRankDiff =
+                                          issue.zoneRank && issue.zoneRank !== issue.globalRank;
 
-                                                    {/* Purely Read-Only Status Badge */}
-                                                    <span
-                                                        className={`px-2 py-0.5 rounded-full font-medium text-[10px] capitalize ${
-                                                            issue.status === "resolved"
-                                                                ? "bg-[#EDF8F0] text-[#1D7D3B]"
-                                                                : issue.status === "in_progress"
-                                                                ? "bg-[#FDF5EB] text-[#9A5B00]"
-                                                                : "bg-[#FDEDEC] text-[#C02820]"
-                                                        }`}
-                                                    >
-                                                        {issue.status.replace("_", " ")}
-                                                    </span>
-                                                </div>
+                                      let tierBg = "#4B5563"; // P4 Normal
+                                      if (metrics.tier === "P1 Critical") tierBg = "#C02820";
+                                      else if (metrics.tier === "P2 High") tierBg = "#D97706";
+                                      else if (metrics.tier === "P3 Medium") tierBg = "#007AFF";
 
-                                                <div className="space-y-1">
-                                                    <h4 className="font-semibold text-xs text-[#1D1D1F] leading-snug line-clamp-2">
-                                                        {issue.ai_title || "Reported Civic Issue"}
-                                                    </h4>
+                                      const rankIcon = L.divIcon({
+                                          className: "admin-priority-pin",
+                                          html: `
+                                              <div style="
+                                                  width: 26px;
+                                                  height: 26px;
+                                                  border-radius: 9999px;
+                                                  background-color: ${tierBg};
+                                                  color: #ffffff;
+                                                  border: 2px solid #ffffff;
+                                                  box-shadow: 0 2px 7px rgba(0,0,0,0.38);
+                                                  display: flex;
+                                                  align-items: center;
+                                                  justify-content: center;
+                                                  font-size: 11px;
+                                                  font-weight: 800;
+                                                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                                                  cursor: pointer;
+                                              ">
+                                                  ${displayRank}
+                                              </div>
+                                          `,
+                                          iconSize: [26, 26],
+                                          iconAnchor: [13, 13],
+                                          popupAnchor: [0, -13],
+                                      });
 
-                                                    {issue.ai_description && (
-                                                        <p className="text-[11px] text-[#6E6E73] line-clamp-2 leading-relaxed">
-                                                            {issue.ai_description}
-                                                        </p>
-                                                    )}
-                                                </div>
+                                      const distFromAdmin = adminCoords
+                                          ? getDistanceKm(
+                                                adminCoords.lat,
+                                                adminCoords.lng,
+                                                issue.latitude,
+                                                issue.longitude
+                                            )
+                                          : null;
 
-                                                {/* Metrics */}
-                                                <div className="flex items-center justify-between text-[11px] pt-1 border-t border-[#F0F0F2] text-[#86868B]">
-                                                    <span>
-                                                        <strong className="text-[#1D1D1F]">{issue.upvote_count}</strong> upvotes
-                                                    </span>
+                                      return (
+                                          <Marker
+                                              key={`admin-pin-${issue.id}`}
+                                              position={[issue.latitude, issue.longitude]}
+                                              icon={rankIcon}
+                                          >
+                                              <Popup>
+                                                  <div className="w-64 p-1 space-y-2.5 font-sans">
+                                                      {issue.image_url ? (
+                                                          <div className="relative w-full h-28 bg-[#F5F5F7] rounded-lg overflow-hidden border border-[#E5E5EA]">
+                                                              <Image
+                                                                  src={issue.image_url}
+                                                                  alt={issue.ai_title || "Civic Hazard"}
+                                                                  fill
+                                                                  unoptimized
+                                                                  className="object-cover"
+                                                                  sizes="256px"
+                                                              />
+                                                          </div>
+                                                      ) : null}
 
-                                                    {issue.ai_severity_score && (
-                                                        <span>
-                                                            Severity: <strong className="text-[#1D1D1F]">{issue.ai_severity_score}/10</strong>
-                                                        </span>
-                                                    )}
-                                                </div>
+                                                      {/* Priority Rank Header */}
+                                                      <div className="flex items-center justify-between gap-1.5 pb-1 border-b border-[#F0F0F2]">
+                                                          <span
+                                                              className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white"
+                                                              style={{ backgroundColor: tierBg }}
+                                                          >
+                                                              Rank #{displayRank} ({metrics.tier})
+                                                          </span>
+                                                          <span className="text-[11px] font-bold text-[#1D1D1F]">
+                                                              Score {metrics.score.toFixed(1)}/100
+                                                          </span>
+                                                      </div>
 
-                                                {/* Actions Row: Go to this post/issue & Directions */}
-                                                <div className="pt-2 border-t border-[#F0F0F2] flex items-center gap-2">
-                                                    <Link
-                                                        href={`/issues/${issue.id}`}
-                                                        className="flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-[#1D1D1F] hover:bg-[#333336] text-white text-xs font-semibold shadow-xs transition-colors"
-                                                    >
-                                                        <span>Go to this issue</span>
-                                                        <ArrowRight size={13} />
-                                                    </Link>
+                                                      {/* Local vs Citywide Context */}
+                                                      {isZoneRankDiff && (
+                                                          <div className="text-[10px] bg-[#EBF5FF] text-[#007AFF] px-2 py-0.5 rounded-md font-medium">
+                                                              Zone Rank: #{issue.zoneRank} &bull; Citywide: #{issue.globalRank}
+                                                          </div>
+                                                      )}
 
-                                                    <a
-                                                        href={`https://www.google.com/maps?q=${issue.latitude},${issue.longitude}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="p-1.5 rounded-lg border border-[#E5E5EA] text-[#6E6E73] hover:text-[#1D1D1F] hover:bg-[#F5F5F7] transition-colors"
-                                                        title="Open in Google Maps"
-                                                    >
-                                                        <ExternalLink size={13} />
-                                                    </a>
-                                                </div>
-                                            </div>
-                                        </Popup>
-                                    </CircleMarker>
-                                );
-                            })}
+                                                      <div className="space-y-0.5">
+                                                          <h4 className="font-semibold text-xs text-[#1D1D1F] leading-snug line-clamp-2">
+                                                              {issue.ai_title || "Reported Civic Hazard"}
+                                                          </h4>
+                                                          <div className="flex items-center gap-1.5 text-[10px] text-[#86868B]">
+                                                              <span>{issue.ai_category || "General"}</span>
+                                                              {distFromAdmin !== null && (
+                                                                  <span>&bull; {distFromAdmin.toFixed(1)} km away</span>
+                                                              )}
+                                                          </div>
+                                                      </div>
+
+                                                      {/* Metrics Pill Grid */}
+                                                      <div className="grid grid-cols-2 gap-1.5 p-1.5 bg-[#F5F5F7] rounded-lg text-[10px]">
+                                                          <div>
+                                                              <span className="text-[#86868B] block">AI Severity</span>
+                                                              <span className="font-bold text-[#1D1D1F]">
+                                                                  {issue.ai_severity_score ?? 5}/10
+                                                              </span>
+                                                          </div>
+                                                          <div>
+                                                              <span className="text-[#86868B] block">Upvotes</span>
+                                                              <span className="font-bold text-[#1D1D1F]">
+                                                                  {issue.upvote_count} votes
+                                                              </span>
+                                                          </div>
+                                                      </div>
+
+                                                      {/* Interactive In-Popup Status Selector */}
+                                                      <div className="pt-1 border-t border-[#F0F0F2] space-y-1">
+                                                          <span className="text-[10px] font-semibold text-[#86868B] uppercase block">
+                                                              Update Dispatch Status
+                                                          </span>
+                                                          <select
+                                                              value={issue.status}
+                                                              onChange={(e) =>
+                                                                  handlePopupStatusChange(issue.id, e.target.value)
+                                                              }
+                                                              aria-label="Update issue status"
+                                                              className="w-full bg-[#F5F5F7] hover:bg-[#EEEEF0] text-xs font-medium rounded-lg px-2 py-1 text-[#1D1D1F] focus:outline-none cursor-pointer border border-[#E5E5EA]"
+                                                          >
+                                                              <option value="open">Open</option>
+                                                              <option value="in_progress">In Progress</option>
+                                                              <option value="resolved">Resolved</option>
+                                                          </select>
+                                                      </div>
+
+                                                      {/* Action Buttons */}
+                                                      <div className="pt-1.5 flex items-center gap-1.5">
+                                                          <Link
+                                                              href={`/admin/issues/${issue.id}`}
+                                                              className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 px-2.5 rounded-lg bg-[#1D1D1F] hover:bg-[#333336] text-white text-[11px] font-semibold transition-colors"
+                                                          >
+                                                              <span>Open Admin Details</span>
+                                                              <ArrowRight size={11} />
+                                                          </Link>
+
+                                                          <a
+                                                              href={`https://www.google.com/maps?q=${issue.latitude},${issue.longitude}`}
+                                                              target="_blank"
+                                                              rel="noopener noreferrer"
+                                                              className="p-1.5 rounded-lg border border-[#E5E5EA] text-[#6E6E73] hover:text-[#1D1D1F] hover:bg-[#F5F5F7] transition-colors"
+                                                              title="Directions on Google Maps"
+                                                          >
+                                                              <ExternalLink size={12} />
+                                                          </a>
+                                                      </div>
+                                                  </div>
+                                              </Popup>
+                                          </Marker>
+                                      );
+                                  })
+                                : filteredIssues.map((issue) => {
+                                      const catColor = getCategoryColor(issue.ai_category);
+                                      const radius = Math.min(
+                                          13,
+                                          7 + Math.sqrt(issue.upvote_count) * 0.9
+                                      );
+
+                                      return (
+                                          <CircleMarker
+                                              key={issue.id}
+                                              center={[issue.latitude, issue.longitude]}
+                                              pathOptions={{
+                                                  color: catColor.stroke,
+                                                  fillColor: catColor.fill,
+                                                  fillOpacity: 0.95,
+                                                  weight: 2,
+                                              }}
+                                              radius={radius}
+                                          >
+                                              <Popup>
+                                                  <div className="w-60 p-1 space-y-2.5 font-sans">
+                                                      {issue.image_url ? (
+                                                          <div className="relative w-full h-28 bg-[#F5F5F7] rounded-lg overflow-hidden border border-[#E5E5EA]">
+                                                              <Image
+                                                                  src={issue.image_url}
+                                                                  alt={issue.ai_title || "Civic Issue"}
+                                                                  fill
+                                                                  unoptimized
+                                                                  className="object-cover"
+                                                                  sizes="240px"
+                                                              />
+                                                          </div>
+                                                      ) : null}
+
+                                                      {/* Category & Read-Only Status */}
+                                                      <div className="flex items-center justify-between gap-1 text-[11px]">
+                                                          <span
+                                                              className="font-bold text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-md"
+                                                              style={{
+                                                                  backgroundColor: catColor.badgeBg,
+                                                                  color: catColor.badgeText,
+                                                              }}
+                                                          >
+                                                              {catColor.label}
+                                                          </span>
+
+                                                          {/* Purely Read-Only Status Badge */}
+                                                          <span
+                                                              className={`px-2 py-0.5 rounded-full font-medium text-[10px] capitalize ${
+                                                                  issue.status === "resolved"
+                                                                      ? "bg-[#EDF8F0] text-[#1D7D3B]"
+                                                                      : issue.status === "in_progress"
+                                                                      ? "bg-[#FDF5EB] text-[#9A5B00]"
+                                                                      : "bg-[#FDEDEC] text-[#C02820]"
+                                                              }`}
+                                                          >
+                                                              {issue.status.replace("_", " ")}
+                                                          </span>
+                                                      </div>
+
+                                                      <div className="space-y-1">
+                                                          <h4 className="font-semibold text-xs text-[#1D1D1F] leading-snug line-clamp-2">
+                                                              {issue.ai_title || "Reported Civic Issue"}
+                                                          </h4>
+
+                                                          {issue.ai_description && (
+                                                              <p className="text-[11px] text-[#6E6E73] line-clamp-2 leading-relaxed">
+                                                                  {issue.ai_description}
+                                                              </p>
+                                                          )}
+                                                      </div>
+
+                                                      {/* Metrics */}
+                                                      <div className="flex items-center justify-between text-[11px] pt-1 border-t border-[#F0F0F2] text-[#86868B]">
+                                                          <span>
+                                                              <strong className="text-[#1D1D1F]">{issue.upvote_count}</strong> upvotes
+                                                          </span>
+
+                                                          {issue.ai_severity_score && (
+                                                              <span>
+                                                                  Severity: <strong className="text-[#1D1D1F]">{issue.ai_severity_score}/10</strong>
+                                                              </span>
+                                                          )}
+                                                      </div>
+
+                                                      {/* Actions Row: Go to this post/issue & Directions */}
+                                                      <div className="pt-2 border-t border-[#F0F0F2] flex items-center gap-2">
+                                                          <Link
+                                                              href={`/issues/${issue.id}`}
+                                                              className="flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-[#1D1D1F] hover:bg-[#333336] text-white text-xs font-semibold shadow-xs transition-colors"
+                                                          >
+                                                              <span>Go to this issue</span>
+                                                              <ArrowRight size={13} />
+                                                          </Link>
+
+                                                          <a
+                                                              href={`https://www.google.com/maps?q=${issue.latitude},${issue.longitude}`}
+                                                              target="_blank"
+                                                              rel="noopener noreferrer"
+                                                              className="p-1.5 rounded-lg border border-[#E5E5EA] text-[#6E6E73] hover:text-[#1D1D1F] hover:bg-[#F5F5F7] transition-colors"
+                                                              title="Open in Google Maps"
+                                                          >
+                                                              <ExternalLink size={13} />
+                                                          </a>
+                                                      </div>
+                                                  </div>
+                                              </Popup>
+                                          </CircleMarker>
+                                      );
+                                  }))}
                     </MapContainer>
 
                     {/* Bottom Status / Legend Bar inside Map */}
@@ -781,7 +1254,9 @@ export default function LiveMapComponent({
                         </div>
 
                         <div className="bg-white/95 backdrop-blur-md border border-[#E5E5EA] rounded-xl px-3 py-2 shadow-xs pointer-events-auto text-[11px] font-medium text-[#1D1D1F]">
-                            {filteredIssues.length} active pins • {hotspots.length} hotspots
+                            {isAdmin && radiusKm > 0 && adminCoords
+                                ? `${displayedIssues.length} zone pins (within ${radiusKm}km) • ${hotspots.length} hotspots`
+                                : `${filteredIssues.length} active pins • ${hotspots.length} hotspots`}
                         </div>
                     </div>
                 </div>

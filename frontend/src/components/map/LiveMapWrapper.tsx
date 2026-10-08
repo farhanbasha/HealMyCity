@@ -16,9 +16,11 @@ const LiveMap = dynamic(() => import("./LiveMapComponent"), {
 export default function LiveMapWrapper({
     issues,
     focusIssueId,
+    isAdmin,
 }: {
     issues: MapIssue[];
     focusIssueId?: string;
+    isAdmin?: boolean;
 }) {
-    return <LiveMap issues={issues} focusIssueId={focusIssueId} />;
+    return <LiveMap issues={issues} focusIssueId={focusIssueId} isAdmin={isAdmin} />;
 }

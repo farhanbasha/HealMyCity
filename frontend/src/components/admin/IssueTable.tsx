@@ -2,10 +2,11 @@
 
 import { useState, useMemo } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
-import { Search, ArrowUpDown, Filter, Sparkles } from "lucide-react";
+import { Search, ArrowUpDown, Filter, Sparkles, ChevronRight } from "lucide-react";
 import { rankIssues, PriorityMetrics } from "@/lib/priority";
 
 export type AdminIssue = {
@@ -224,8 +225,12 @@ export default function IssueTable({
 
                                         {/* Issue Info + Severity & Upvotes */}
                                         <td className="px-5 py-3.5">
-                                            <div className="flex items-center gap-3">
-                                                <div className="relative w-11 h-11 rounded-lg overflow-hidden bg-[#F5F5F7] flex-shrink-0 border border-[#E5E5EA]">
+                                            <Link
+                                                href={`/admin/issues/${issue.id}`}
+                                                prefetch={true}
+                                                className="flex items-center gap-3 group"
+                                            >
+                                                <div className="relative w-11 h-11 rounded-lg overflow-hidden bg-[#F5F5F7] shrink-0 border border-[#E5E5EA] group-hover:border-[#007AFF] transition-colors">
                                                     {issue.image_url ? (
                                                         <Image
                                                             src={issue.image_url}
@@ -242,7 +247,7 @@ export default function IssueTable({
                                                     )}
                                                 </div>
                                                 <div className="min-w-0 max-w-xs sm:max-w-md">
-                                                    <p className="font-semibold text-xs text-[#1D1D1F] truncate">
+                                                    <p className="font-semibold text-xs text-[#1D1D1F] group-hover:text-[#007AFF] transition-colors truncate">
                                                         {issue.ai_title || "Untitled"}
                                                     </p>
                                                     <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -265,7 +270,7 @@ export default function IssueTable({
                                                         </span>
                                                     </div>
                                                 </div>
-                                            </div>
+                                            </Link>
                                         </td>
 
                                         {/* Category */}
@@ -302,15 +307,26 @@ export default function IssueTable({
 
                                         {/* Status */}
                                         <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                                            <select
-                                                value={issue.status}
-                                                onChange={(e) => handleStatusChange(issue.id, e.target.value)}
-                                                className="bg-[#F5F5F7] hover:bg-[#EEEEF0] border border-transparent text-xs font-medium rounded-lg px-2.5 py-1 text-[#1D1D1F] focus:outline-none cursor-pointer transition-colors"
-                                            >
-                                                <option value="open">Open</option>
-                                                <option value="in_progress">In Progress</option>
-                                                <option value="resolved">Resolved</option>
-                                            </select>
+                                            <div className="inline-flex items-center gap-2">
+                                                <select
+                                                    value={issue.status}
+                                                    onChange={(e) => handleStatusChange(issue.id, e.target.value)}
+                                                    className="bg-[#F5F5F7] hover:bg-[#EEEEF0] border border-transparent text-xs font-medium rounded-lg px-2.5 py-1 text-[#1D1D1F] focus:outline-none cursor-pointer transition-colors"
+                                                >
+                                                    <option value="open">Open</option>
+                                                    <option value="in_progress">In Progress</option>
+                                                    <option value="resolved">Resolved</option>
+                                                </select>
+
+                                                <Link
+                                                    href={`/admin/issues/${issue.id}`}
+                                                    prefetch={true}
+                                                    className="p-1 rounded-md text-[#86868B] hover:text-[#007AFF] hover:bg-[#F5F5F7] transition-colors"
+                                                    title="Inspect Issue Details & Priority Breakdown"
+                                                >
+                                                    <ChevronRight size={15} />
+                                                </Link>
+                                            </div>
                                         </td>
                                     </tr>
                                 );

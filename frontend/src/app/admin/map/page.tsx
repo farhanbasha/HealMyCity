@@ -4,7 +4,14 @@ import Link from "next/link";
 import { ArrowLeft, Flame, ShieldAlert } from "lucide-react";
 import type { MapIssue } from "@/components/map/LiveMapComponent";
 
-export default async function AdminMapPage() {
+export default async function AdminMapPage({
+    searchParams,
+}: {
+    searchParams?: Promise<{ focus?: string }>;
+}) {
+    const sp = searchParams ? await searchParams : {};
+    const focusIssueId = sp.focus;
+
     const supabase = await createClient();
 
     const { data: rawIssues } = await supabase
@@ -27,7 +34,7 @@ export default async function AdminMapPage() {
                         City Geospatial Map & Hotspots
                     </h1>
                     <p className="text-xs sm:text-sm text-[#6E6E73]">
-                        Geospatial distribution of active infrastructure issues, cluster hot-zones, and community upvotes.
+                        Geospatial priority dispatch, localized radius triage, and real-time status management.
                     </p>
                 </div>
 
@@ -61,16 +68,16 @@ export default async function AdminMapPage() {
                 <div className="apple-card p-3.5 col-span-2 sm:col-span-1">
                     <div className="text-[11px] font-medium text-[#86868B] uppercase flex items-center gap-1">
                         <ShieldAlert size={12} className="text-[#0071E3]" />
-                        <span>Admin Privileges</span>
+                        <span>Admin Dispatch</span>
                     </div>
                     <div className="text-xs text-[#6E6E73] mt-1 font-medium">
-                        Status updates managed exclusively in Triage Table
+                        Live priority rank badges and status controls enabled
                     </div>
                 </div>
             </div>
 
             {/* Live Map Component */}
-            <LiveMapWrapper issues={issues} />
+            <LiveMapWrapper issues={issues} focusIssueId={focusIssueId} isAdmin={true} />
         </div>
     );
 }
