@@ -6,6 +6,7 @@ import { Search, Plus, MapPin, Navigation, X, SlidersHorizontal } from "lucide-r
 import Link from "next/link";
 import { toast } from "sonner";
 import { getIpLocation } from "@/lib/location";
+import { calculatePriorityMetrics } from "@/lib/priority";
 
 interface HomeFeedProps {
     issues: Issue[];
@@ -253,9 +254,9 @@ export default function HomeFeed({ issues, userVotes, userId }: HomeFeedProps) {
                     return distA - distB;
                 }
                 if (sortBy === "urgency") {
-                    const urgencyA = (a.ai_severity_score || 0) * 10 + a.upvote_count;
-                    const urgencyB = (b.ai_severity_score || 0) * 10 + b.upvote_count;
-                    return urgencyB - urgencyA;
+                    const scoreA = calculatePriorityMetrics(a.ai_severity_score, a.upvote_count).score;
+                    const scoreB = calculatePriorityMetrics(b.ai_severity_score, b.upvote_count).score;
+                    return scoreB - scoreA;
                 }
                 if (sortBy === "upvotes") {
                     return b.upvote_count - a.upvote_count;
@@ -353,7 +354,7 @@ export default function HomeFeed({ issues, userVotes, userId }: HomeFeedProps) {
                             <option value="newest">Most recent</option>
                             {userCoords && <option value="distance">Closest to me</option>}
                             <option value="upvotes">Most upvoted</option>
-                            <option value="urgency">Highest severity</option>
+                            <option value="urgency">Highest priority</option>
                         </select>
                     </div>
                 </div>
